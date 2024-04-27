@@ -9,6 +9,7 @@ __pycache__
 *.prices
 # python virtualenv
 venv/
+venv.*/
 .venv/
 .vs/
 .pycharm/
