@@ -213,42 +213,65 @@ class ImportPlugin(plugins.ImportPluginBase):
         """
         listings_path = Path(self.dataPath, listings_file).absolute()
         from_live = listings_path != Path(self.dataPath, self.listingsPath).absolute()
-        self.tdenv.NOTE("Processing market data from {}: Start time = {}. Live = {}", listings_file, self.now(), from_live)
         
+        self.tdenv.NOTE("Checking listings")
         total = _count_listing_entries(self.tdenv, listings_path)
         if not total:
+            self.tdenv.NOTE("No listings")
             return
 
+        self.tdenv.NOTE("Processing market data from {}: Start time = {}. Live = {}", listings_file, self.now(), from_live)
+
+        db = self.tdb.getDB()
         stmt_unliven_station = """UPDATE StationItem SET from_live = 0 WHERE station_id = ?"""
         stmt_flush_station   = """DELETE from StationItem WHERE station_id = ?"""
-        stmt_add_listing     = """
-            INSERT OR IGNORE INTO StationItem (
-                station_id, item_id, modified, from_live,
-                demand_price, demand_units, demand_level,
-                supply_price, supply_units, supply_level
+
+        # To avoid the cost of messing with our indexes on the primary table,
+        # we're going to write all the new records into a cheap-to-write table
+        # and then we'll ask the database to transfer the columns, allowing
+        # it to plan the query for itself the best way possible.
+        db.execute("""
+            CREATE TEMPORARY TABLE IF NOT EXISTS NewStationItem (
+                station_id int      NOT NULL,
+                item_id int         NOT NULL,
+                demand_price int    NOT NULL,
+                demand_units int    NOT NULL,
+                demand_level int    NOT NULL,
+                supply_price int    NOT NULL,
+                supply_units int    NOT NULL,
+                supply_level int    NOT NULL,
+                modified datetime   NOT NULL,
+                from_live int       NOT NULL,
+                PRIMARY KEY (station_id, item_id)
             )
+        """)
+
+        # TODO: Check if there's already stuff in it?
+        db.execute("DELETE FROM NewStationItem")
+
+        # Make a query for writing into it
+        stmt_add_listing     = """
+            INSERT INTO NewStationItem
             VALUES (
-                ?, ?, datetime(?, 'unixepoch'), ?,
+                ?, ?,
                 ?, ?, ?,
-                ?, ?, ?
+                ?, ?, ?,
+                datetime(?, 'unixepoch'), ?
             )
         """
         
         # Fetch all the items IDS
-        db = self.tdb.getDB()
         item_lookup = _make_item_id_lookup(self.tdenv, db.cursor())
         station_lookup = _make_station_id_lookup(self.tdenv, db.cursor())
         last_station_update_times = _collect_station_modified_times(self.tdenv, db.cursor())
         
         cur_station = None
         self.tdenv.DEBUG0("Processing entries...")
-        with listings_path.open("r", encoding="utf-8", errors="ignore") as fh:
-            prog = pbar.Progress(total, 50)
-
+        with pbar.Progress(total, 40, prefix="Processing", style=pbar.CountingBar) as prog, listings_path.open("r", encoding="utf-8", errors="ignore") as fh:
             cursor: Optional[sqlite3.Cursor] = db.cursor()
             
             for listing in csv.DictReader(fh):
-                prog.increment(1, postfix = lambda value, total: f" {(value / total * 100):.0f}% {value} / {total}")
+                prog.increment(1)
                 
                 station_id = int(listing['station_id'])
                 if station_id not in station_lookup:
@@ -301,18 +324,27 @@ class ImportPlugin(plugins.ImportPluginBase):
                 
                 self.tdenv.DEBUG1(f"Inserting new listing data for {station_id}.")
                 cursor.execute(stmt_add_listing, (
-                        station_id, item_id, listing_time, from_live,
+                        station_id, item_id,
                         demand_price, demand_units, demand_level,
                         supply_price, supply_units, supply_level,
+                        listing_time, from_live,
                 ))
-            
-        prog.clear()
         
-        # Do a final commit to be sure
-        db.commit()
-        
-        self.tdenv.NOTE("Optimizing database...")
-        db.execute("VACUUM")
+        # These will take a little while, which has four steps, so we'll make it a counter.
+        with pbar.Progress(4, 40, prefix="Storing", style=pbar.CountingBar) as bar:
+            db.execute("""
+                INSERT OR REPLACE INTO StationItem
+                SELECT * FROM NewStationItem
+            """)
+            bar.increment(1, description="Prune")
+            db.execute("DELETE FROM NewStationItem")
+            bar.increment(1, "Commit")
+            # Do a final commit to be sure
+            db.commit()
+            bar.increment(1, "Optimize")
+            db.execute("VACUUM")
+            bar.increment(1)
+
         self.tdb.close()
         
         self.tdenv.NOTE("Finished processing market data. End time = {}", self.now())

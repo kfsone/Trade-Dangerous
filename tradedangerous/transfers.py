@@ -118,6 +118,7 @@ def download(
     tmpPath = Path(tdenv.tmpDir, "{}.dl".format(actPath.name))
     
     fetched = 0
+    started = time.time()
     with tmpPath.open("wb") as fh:
         for data in req.iter_content(chunk_size=chunkSize):
             fh.write(data)
