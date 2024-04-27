@@ -1,0 +1,5 @@
+ijson>=3.2,<3.3
+importlib-metadata>=7.1,<7.2
+requests>=2.31,<2.32
+rich>=13.7,<13.8
+appJar>=0.94,<1.0; extra != 'cli'

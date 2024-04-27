@@ -18,6 +18,15 @@ try:
 except ImportError:
     pass
 
+
+base_requires = [
+    "ijson>=3.2,<3.3",
+    "importlib-metadata>=7.1,<7.2",
+    "requests>=2.31,<2.32",
+    "rich>=13.7,<13.8",
+    "appJar>=0.94,<1.0; extra != 'cli'",
+],
+
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
@@ -27,7 +36,10 @@ exec(open("tradedangerous/version.py").read())  # pylint: disable=W0122
 
 setup(name = package,
         version = __version__,  # pylint: disable=E0602
-        install_requires = ["requests", "appJar", "ijson", "rich"],
+        install_requires = base_requires,
+        extras_require = {
+            'cli': [],
+        },
         setup_requires = ["pytest-runner"],
         tests_require = ["pytest"],
         packages = ['.', 'tradedangerous', 'tradedangerous.commands', 'tradedangerous.mfd', 'tradedangerous.mfd.saitek', 'tradedangerous.misc', 'tradedangerous.plugins'],
@@ -49,6 +61,7 @@ setup(name = package,
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Operating System :: OS Independent",
         ],
