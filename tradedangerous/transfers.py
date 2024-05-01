@@ -109,7 +109,7 @@ def download(
     # Figure out how much data we have
     if not tdenv.quiet:
         filename = get_filename_from_url(url)
-        progBar = pbar.Progress(length, 20, prefix=filename, style=pbar.TransferBar)
+        progBar = pbar.Progress(length, 25, prefix=filename, style=pbar.TransferBar)
     else:
         progBar = None
     
