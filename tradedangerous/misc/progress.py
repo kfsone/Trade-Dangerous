@@ -1,21 +1,20 @@
 from rich.progress import (
         Progress as RichProgress,
+        TaskID,
         ProgressColumn,
         BarColumn, DownloadColumn, MofNCompleteColumn, SpinnerColumn, 
         TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn,
         TransferSpeedColumn
 )
+from contextlib import contextmanager
 
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Type
 
 
 class BarStyle:
     """ Base class for Progress bar style types. """
     def __init__(self, width: int = 10, prefix: Optional[str] = None, *, add_columns: Optional[Iterable[ProgressColumn]]):
-        self.columns = [SpinnerColumn()]
-        if prefix is not None:
-            self.columns += [TextColumn(prefix)]
-        self.columns += BarColumn(bar_width=width),
+        self.columns = [SpinnerColumn(), TextColumn(prefix), BarColumn(bar_width=width)]
         if add_columns:
             self.columns.extend(add_columns)
 
@@ -53,8 +52,8 @@ class Progress:
                  start: float = 0,
                  prefix: Optional[str] = None,
                  *,
-                 style: BarStyle = DefaultBar,
-                 show: bool = False,
+                 style: Optional[Type[BarStyle]] = None,
+                 show: bool = True,
                  ) -> None:
         """
             :param max_value: Last value we can reach (100%).
@@ -68,15 +67,19 @@ class Progress:
         if not show:
             return
 
+        if style is None:
+            style = DefaultBar
+
         self.max_value = 0 if max_value is None else max(max_value, start)
         self.value = start
         self.prefix = prefix or ""
         self.width = width or 25
         # The 'Progress' itself is a view for displaying the progress of tasks. So we construct it
         # and then create a task for our job.
+        style_instance = style(width=self.width, prefix=self.prefix)
         self.progress = RichProgress(
             # What fields to display.
-            *style(width=self.width, prefix=self.prefix).columns,
+            *style_instance.columns,
             # Hide it once it's finished, update it for us, 4x a second
             transient=True, auto_refresh=True, refresh_per_second=4
         )
@@ -113,13 +116,14 @@ class Progress:
         Increase the progress of the bar by a given amount.
         
         :param value:  How much to increase the progress by.
-        :param completed: Concrete value to advance to
         :param description: If set, replaces the task description.
+        :param progress: Instead of increasing by value, set the absolute progress to this.
         """
         if not self.show:
             return
         if description:
-            self.progress.update(self.task, description=description)
+            self.prefix = description
+            self.progress.update(self.task, description=description, refresh=True)
         
         bump = False
         if not value and progress is not None and self.value != progress:
@@ -131,11 +135,11 @@ class Progress:
 
         if self.value >= self.max_value:  # Did we go past the end? Increase the end.
             self.max_value += value * 2
-            self.progress.update(self.task, total=self.max_value)
+            self.progress.update(self.task, description=self.prefix, total=self.max_value)
             bump = True
 
         if bump and self.max_value > 0:
-            self.progress.update(self.task, completed=self.value)
+            self.progress.update(self.task, description=self.prefix, completed=self.value)
 
     def clear(self) -> None:
         """ Remove the current progress bar, if any. """
@@ -151,3 +155,18 @@ class Progress:
         if self.progress:
             self.progress.stop()
             self.progress = None
+            
+    @contextmanager
+    def sub_task(self, description: str, max_value: Optional[int] = None, width: int = 25):
+        if not self.show:
+            yield
+            return
+        task = self.progress.add_task(description, total=max_value, start=True, width=width)
+        try:
+            yield task
+        finally:
+            self.progress.remove_task(task)
+
+    def update_task(self, task: TaskID, value: float, description: Optional[str] = None):
+        if self.show:
+            self.progress.update(task, value=value, description=description)
