@@ -557,7 +557,7 @@ class TradeCalc:
         
         whereClause = " AND ".join(wheres) or "1"
         
-        lastStnID = 0
+        lastStnID = None
         dmdCount, supCount = 0, 0
         stmt = """
                 SELECT  station_id, item_id,

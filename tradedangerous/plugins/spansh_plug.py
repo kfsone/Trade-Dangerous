@@ -6,15 +6,16 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from rich.progress import Progress
-
-from .. import plugins, cache, transfers, csvexport, corrections
-
+import json
 import sqlite3
 import sys
 import time
 import typing
 
+from .. import plugins, cache, transfers, csvexport, corrections
+
 import ijson
+
 
 if sys.version_info.major == 3 and sys.version_info.minor >= 10:
     from dataclasses import dataclass
@@ -23,8 +24,9 @@ else:
 
 if typing.TYPE_CHECKING:
     from typing import Any, Optional
-    from collections.abc import Iterable
+    from collections.abc import Generator, Iterable
     from .. tradeenv import TradeEnv
+
 
 SOURCE_URL = 'https://downloads.spansh.co.uk/galaxy_stations.json'
 
@@ -41,6 +43,7 @@ STATION_TYPE_MAP = {
     'Drake-Class Carrier': [24, False],  # fleet carriers
     'Settlement': [25, True],            # odyssey settlements
 }
+
 
 if dataclass:
     # Dataclass with slots is considerably cheaper and faster than namedtuple
@@ -294,16 +297,16 @@ class ImportPlugin(plugins.ImportPluginBase):
         if self.tdenv.detail:
             print('Counting total number of systems...')
         with open(self.file, 'r', encoding='utf8') as stream:
-            for system_data in ijson.items(stream, 'item', use_float=True):
+            for _ in ijson.items(stream, 'item', use_float=True):
                 total_systems += 1
-                if (not total_systems % 250) and self.tdenv.detail:
+                if not (total_systems % 1000) and self.tdenv.detail:
                     print(f'Total systems: {total_systems}', end='\r')
         
         if self.tdenv.detail:
             print(f'Total systems: {total_systems}')
         
-        with Timing() as timing, Progresser(self.tdenv, sys_desc, total=total_systems) as progress:
         # with Timing() as timing, Progresser(self.tdenv, sys_desc, total=len(self.known_stations)) as progress:
+        with Timing() as timing, Progresser(self.tdenv, sys_desc, total=total_systems) as progress:
             system_count = 0
             total_station_count = 0
             total_ship_count = 0
@@ -718,9 +721,9 @@ class ImportPlugin(plugins.ImportPluginBase):
         """Ingest a spansh-style galaxy dump, yielding system-level data."""
         for system_data in ijson.items(stream, 'item', use_float=True):
             if "Shinrarta Dezhra" in system_data.get('name') and self.tdenv.debug:
-                with open(Path(self.tdenv.tmpDir, "shin_dez.json"), 'w') as file:
+                out_file = Path(self.tdenv.tmpDir, "shin_dez.json")
+                with out_file.open("w", encoding="utf-8") as file:
                     # file.write(system_data)
-                    import json
                     json.dump(system_data, file, indent=4)
             
             coords = system_data.get('coords', {})
@@ -787,10 +790,11 @@ def ingest_stations(system_data):
                 ingest_market(market),
             )
 
-def ingest_shipyard(shipyard):
+
+def ingest_shipyard(shipyard: str) -> Generator[Ship, None, None]:
     """Ingest station-level market data, yielding commodities."""
     if not shipyard or not shipyard.get('ships'):
-        return None
+        return
     for ship in shipyard['ships']:
         yield Ship(
             id=ship.get('shipId'),
@@ -798,10 +802,11 @@ def ingest_shipyard(shipyard):
             modified=parse_ts(shipyard.get('updateTime'))
         )
 
-def ingest_outfitting(outfitting):
+
+def ingest_outfitting(outfitting: str) -> Generator[Module, None, None]:
     """Ingest station-level market data, yielding commodities."""
     if not outfitting or not outfitting.get('modules'):
-        return None
+        return
     for module in outfitting['modules']:
         yield Module(
             id=module.get('moduleId'),
@@ -812,10 +817,11 @@ def ingest_outfitting(outfitting):
             modified=parse_ts(outfitting.get('updateTime'))
         )
 
-def ingest_market(market):
+
+def ingest_market(market: str) -> Generator[Commodity, None, None]:
     """Ingest station-level market data, yielding commodities."""
     if not market or not market.get('commodities'):
-        return None
+        return
     for commodity in market['commodities']:
         yield Commodity(
             id=commodity.get('commodityId'),
@@ -828,8 +834,9 @@ def ingest_market(market):
             modified=parse_ts(market.get('updateTime'))
         )
 
-def parse_ts(ts):
-    if ts is None:
+
+def parse_ts(ts: str) -> Optional[datetime]:
+    if not ts:
         return None
     if ts.endswith('+00'):
         ts = ts[:-3]

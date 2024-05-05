@@ -40,8 +40,9 @@ from . import prices
 
 # For mypy/pylint type checking
 if typing.TYPE_CHECKING:
-    from typing import Any, Callable, Optional, TextIO  # noqa
-    
+    from typing import Any, Optional, TextIO
+    from collections.abc import Callable
+    from .tradedb import TradeDB
     from .tradeenv import TradeEnv
 
 
@@ -780,7 +781,10 @@ def deprecationCheckItem(importPath, lineNo, line):
     )
 
 
-def processImportFile(tdenv, db, importPath, tableName, *, line_callback: Optional[Callable] = None, call_args: Optional[dict] = None):
+def processImportFile(tdenv: TradeEnv, db: sqlite3.Connection, importPath: Path, tableName: str,
+                      *,
+                      line_callback: Optional[Callable] = None, call_args: Optional[dict] = None,
+                      )-> None:
     tdenv.DEBUG0(
         "Processing import file '{}' for table '{}'",
         str(importPath), tableName
@@ -855,13 +859,9 @@ def processImportFile(tdenv, db, importPath, tableName, *, line_callback: Option
                 )
             )
         # now we can make the sql statement
-        sql_stmt = """
-            INSERT OR REPLACE INTO {table} ({columns}) VALUES({values})
-        """.format(
-            table=tableName,
-            columns=','.join(bindColumns),
-            values=','.join(bindValues)
-        )
+        sql_stmt = f"""
+            INSERT OR REPLACE INTO {tableName} ({",".join(bindColumns)}) VALUES({",".join(bindValues)})
+        """
         tdenv.DEBUG0("SQL-Statement: {}", sql_stmt)
         
         # Check if there is a deprecation check for this table.
@@ -917,19 +917,11 @@ def processImportFile(tdenv, db, importPath, tableName, *, line_callback: Option
                     importCount += 1
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     tdenv.WARN(
-                        "*** INTERNAL ERROR: {err}\n"
-                        "CSV File: {file}:{line}\n"
-                        "SQL Query: {query}\n"
-                        "Params: {params}\n"
-                        .format(
-                            err = str(e),
-                            file = str(importPath),
-                            line = lineNo,
-                            query = sql_stmt.strip(),
-                            params = linein
-                        )
+                        f"*** INTERNAL ERROR: {e}\n"
+                        f"CSV File: {importPath}:{lineNo}\n"
+                        f"SQL Query: {sql_stmt.strip()}\n"
+                        f"Params: {linein}\n"
                     )
-                    pass
             else:
                 tdenv.NOTE(
                         "Wrong number of columns ({}:{}): {}",
@@ -945,12 +937,12 @@ def processImportFile(tdenv, db, importPath, tableName, *, line_callback: Option
 ######################################################################
 
 
-def buildCache(tdb, tdenv):
+def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
     """
     Rebuilds the SQlite database from source files.
     
     TD's data is either "stable" - information that rarely changes like Ship
-    details, star systems etc - and "volatile" - pricing information, etc.
+    details, star systems etc - or "volatile" - pricing information, etc.
     
     The stable data starts out in data/TradeDangerous.sql while other data
     is stored in custom-formatted text files, e.g. ./TradeDangerous.prices.
@@ -965,78 +957,71 @@ def buildCache(tdb, tdenv):
         stderr=True,
     )
     
-    dbPath = tdb.dbPath
-    sqlPath = tdb.sqlPath
-    pricesPath = tdb.pricesPath
+    db_path = tdb.dbPath
+    sql_path = tdb.sqlPath
+    prices_path = tdb.pricesPath
     
-    # Create an in-memory database to populate with our data.
-    tempPath = dbPath.with_suffix(".new")
-    backupPath = dbPath.with_suffix(".old")
+    # Check if the current database is compatible with our schema.    
+    with sqlite3.connect(str(db_path)) as db:
+        # Determine what schema version the database thinks it is at.
+        schema_no = db.execute("PRAGMA user_version").fetchone()[0]
     
-    if tempPath.exists():
-        tempPath.unlink()
+    if int(schema_no) != tdb.SCHEMA_VERSION:
+        tdenv.NOTE(":woman_mechanic: Incompatible cache version detected, adapting.")
+        tdenv.remove_file(db_path)
     
-    tempDB = sqlite3.connect(str(tempPath))
-    tempDB.execute("PRAGMA foreign_keys=ON")
     # Read the SQL script so we are ready to populate structure, etc.
-    tdenv.DEBUG0("Executing SQL Script '{}' from '{}'", sqlPath, os.getcwd())
-    with sqlPath.open('r', encoding = 'utf-8') as sqlFile:
-        sqlScript = sqlFile.read()
-        tempDB.executescript(sqlScript)
+    # Check if the database matches the current schema.
+    tdenv.DEBUG0("Executing SQL Script '{}' from '{}'", sql_path, os.getcwd())
+    with sqlite3.connect(str(db_path)) as db, sql_path.open('r', encoding = 'utf-8') as sql_file:
+        sql_script = sql_file.read()
+        db.executescript(sql_script)
+        schema_no = db.execute("PRAGMA user_version").fetchone()[0]
+        # P]ragma U]ser_V]ersion to S]chema V]ersion mismatch.
+        assert schema_no == tdb.SCHEMA_VERSION, "Cache versioning update failure PUVSV_MISMATCH"
     
     # import standard tables
-    with Progress(max_value=len(tdb.importTables) + 1, prefix="Importing", width=25, style=CountingBar) as prog:
-        for importName, importTable in tdb.importTables:
-            import_path = Path(importName)
+    with sqlite3.connect(str(db_path)) as db, Progress(max_value=len(tdb.importTables) + 1, prefix="Importing", width=25, style=CountingBar) as prog:
+        for (import_name, import_table) in tdb.importTables:
+            import_path = Path(import_name)
             import_lines = file_line_count(import_path, missing_ok=True)
-            with prog.sub_task(max_value=import_lines, description=importTable) as child:
+            with prog.sub_task(max_value=import_lines, description=import_table) as child:
                 prog.increment(value=1)
                 call_args = {'task': child, 'advance': 1}
                 try:
-                    processImportFile(tdenv, tempDB, import_path, importTable, line_callback=prog.update_task, call_args=call_args)
+                    processImportFile(tdenv, db, import_path, import_table, line_callback=prog.update_task, call_args=call_args)
                 except FileNotFoundError:
                     tdenv.DEBUG0(
-                        "WARNING: processImportFile found no {} file", importName
+                        "WARNING: processImportFile found no {} file", import_name
                     )
                 except StopIteration:
                     tdenv.NOTE(
                         "{} exists but is empty. "
                         "Remove it or add the column definition line.",
-                        importName
+                        import_name
                     )
         prog.increment(1)
         
         with prog.sub_task(description="Save DB"):
-            tempDB.commit()
+            db.commit()
     
     # Parse the prices file
-    if pricesPath.exists():
-        with Progress(max_value=None, width=25, prefix="Processing prices file"):
-            processPricesFile(tdenv, tempDB, pricesPath)
-    else:
-        tdenv.NOTE(
-                "Missing \"{}\" file - no price data.",
-                    pricesPath,
-                    stderr=True,
-        )
-        tempDB.close()
-    
-    tdb.close()
-    
-    tdenv.DEBUG0("Swapping out db files")
-    
-    if dbPath.exists():
-        if backupPath.exists():
-            backupPath.unlink()
-        dbPath.rename(backupPath)
-    tempPath.rename(dbPath)
-    
+    if include_prices:
+        if prices_path.exists():
+            with Progress(max_value=None, width=25, prefix="Processing prices file"), sqlite3.connect(str(db_path)) as db:
+                processPricesFile(tdenv, db, prices_path)
+        else:
+            tdenv.NOTE(
+                    "Missing \"{}\" file - no price data.",
+                        prices_path,
+                        stderr=True,
+            )
     tdenv.DEBUG0("Finished")
 
 ######################################################################
 
 
-def regeneratePricesFile(tdb, tdenv):
+def regeneratePricesFile(tdb: TradeDB, tdenv: TradeEnv) -> None:
     tdenv.DEBUG0("Regenerating .prices file")
     
     with tdb.pricesPath.open("w", encoding = 'utf-8') as pricesFile:
@@ -1052,7 +1037,7 @@ def regeneratePricesFile(tdb, tdenv):
 ######################################################################
 
 
-def importDataFromFile(tdb, tdenv, path, pricesFh = None, reset = False):
+def importDataFromFile(tdb: TradeDB, tdenv: TradeEnv, path: Path, pricesFh = None, reset: bool = False):
     """
         Import price data from a file on a per-station basis,
         that is when a new station is encountered, delete any

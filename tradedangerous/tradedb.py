@@ -75,6 +75,15 @@ if typing.TYPE_CHECKING:
 locale.setlocale(locale.LC_ALL, '')
 
 
+# bump when the schema has changes that require deletion of old
+# data. Match to the `PRAGMA user_version` at the end of the .sql
+#
+SCHEMA_VERSION = 2
+# HISTORY:
+# 2: 6/12/2024: Initial Schema'd version
+# 1: Original pre-schema version
+
+
 ######################################################################
 # Classes
 
@@ -545,14 +554,14 @@ class TradeDB:
     # WARNING: order is important because of dependencies!
     defaultTables = (
         ('Added.csv', 'Added'),
+        ('Category.csv', 'Category'),
+        ('Upgrade.csv', 'Upgrade'),
+        ('Item.csv', 'Item'),
+        ('Ship.csv', 'Ship'),
         ('System.csv', 'System'),
         ('Station.csv', 'Station'),
-        ('Ship.csv', 'Ship'),
         ('ShipVendor.csv', 'ShipVendor'),
-        ('Upgrade.csv', 'Upgrade'),
         ('UpgradeVendor.csv', 'UpgradeVendor'),
-        ('Category.csv', 'Category'),
-        ('Item.csv', 'Item'),
         ('RareItem.csv', 'RareItem'),
         ('FDevShipyard.csv', 'FDevShipyard'),
         ('FDevOutfitting.csv', 'FDevOutfitting'),

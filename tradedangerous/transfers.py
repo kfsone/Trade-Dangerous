@@ -17,7 +17,8 @@ import requests
 if typing.TYPE_CHECKING:
     import os  # for PathLike
     from .tradeenv import TradeEnv
-    from typing import Callable, Optional, Union  # noqa
+    from typing import Optional, Union  # noqa
+    from collections.abc import Callable
 
 
 ######################################################################

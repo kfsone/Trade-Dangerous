@@ -8,7 +8,8 @@ import itertools
 import typing
 
 if typing.TYPE_CHECKING:
-    from typing import Any, Callable, Optional  # noqa
+    from typing import Any, Optional  # noqa
+    from collections.abc import Callable
 
 
 class ColumnFormat:

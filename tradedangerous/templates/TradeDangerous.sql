@@ -27,210 +27,195 @@
 PRAGMA foreign_keys=ON;
 PRAGMA synchronous=OFF;
 PRAGMA temp_store=MEMORY;
-PRAGMA journal_mode=WAL;
+PRAGMA journal_mode=wal;
 PRAGMA auto_vacuum=INCREMENTAL;
 
 BEGIN TRANSACTION;
 
 
+-- Top-level tables (no references to other tables)
+
 CREATE TABLE Added
- (
-   added_id INTEGER PRIMARY KEY AUTOINCREMENT,
-   name VARCHAR(40) COLLATE nocase,
-
-   UNIQUE(name)
- );
+(
+  added_id      INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
+  name          VARCHAR(40) COLLATE nocase NOT NULL UNIQUE
+);
 
 
-CREATE TABLE System
- (
-   system_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-   pos_x DOUBLE NOT NULL,
-   pos_y DOUBLE NOT NULL,
-   pos_z DOUBLE NOT NULL,
-   added_id INTEGER,
-   modified DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-
-   UNIQUE (system_id),
-
-    FOREIGN KEY (added_id) REFERENCES Added(added_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
- );
-CREATE INDEX idx_system_by_pos ON System (pos_x, pos_y, pos_z, system_id);
-
-
-CREATE TABLE Station
- (
-   station_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-   system_id INTEGER NOT NULL,
-   ls_from_star INTEGER NOT NULL DEFAULT 0
-       CHECK (ls_from_star >= 0),
-   blackmarket TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (blackmarket IN ('?', 'Y', 'N')),
-   max_pad_size TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (max_pad_size IN ('?', 'S', 'M', 'L')),
-   market TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (market IN ('?', 'Y', 'N')),
-   shipyard TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (shipyard IN ('?', 'Y', 'N')),
-   modified DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-   outfitting TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (outfitting IN ('?', 'Y', 'N')),
-   rearm      TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (rearm      IN ('?', 'Y', 'N')),
-   refuel     TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (refuel     IN ('?', 'Y', 'N')),
-   repair     TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (repair     IN ('?', 'Y', 'N')),
-   planetary  TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (planetary  IN ('?', 'Y', 'N')),
-   type_id INTEGER DEFAULT 0 NOT NULL,
-
-   UNIQUE (station_id),
-
-   FOREIGN KEY (system_id) REFERENCES System(system_id)
-    ON DELETE CASCADE
- ) WITHOUT ROWID;
-CREATE INDEX idx_station_by_system ON Station (system_id);
-CREATE INDEX idx_station_by_name ON Station (name);
+CREATE TABLE Category
+(
+  category_id   INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase
+);
 
 
 CREATE TABLE Ship
- (
-   ship_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-   cost INTEGER,
-
-   UNIQUE (ship_id)
- );
-
-
-CREATE TABLE ShipVendor
- (
-   ship_id INTEGER NOT NULL,
-   station_id INTEGER NOT NULL,
-   modified DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-
-   PRIMARY KEY (ship_id, station_id),
-
-   FOREIGN KEY (ship_id) REFERENCES Ship(ship_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE,
-   FOREIGN KEY (station_id) REFERENCES Station(station_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
- ) WITHOUT ROWID
-;
+(
+  ship_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  cost          INTEGER NOT NULL
+) WITHOUT ROWID;
 
 
 CREATE TABLE Upgrade
- (
-   upgrade_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-   class NUMBER NOT NULL,
-   rating CHAR(1) NOT NULL,
-   ship VARCHAR(40) COLLATE nocase,
+(
+  upgrade_id    INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  class         NUMBER NOT NULL,
+  rating        CHAR(1) NOT NULL,
+  ship          VARCHAR(40) NOT NULL COLLATE nocase
+) WITHOUT ROWID;
 
-   UNIQUE (upgrade_id)
- );
+
+-- Second tier tables (references 1+ top-tier, and has references from other tables)
+
+CREATE TABLE Item
+(
+  item_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  category_id   INTEGER NOT NULL,
+  ui_order      INTEGER NOT NULL,
+  avg_price     INTEGER,
+  fdev_id       INTEGER,
+
+  CONSTRAINT fk_Item_category_id_Category FOREIGN KEY (category_id) REFERENCES Category(category_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+DROP INDEX IF EXISTS idx_item_by_fdev_id;
+CREATE INDEX ix_Item_fdev_id ON Item (fdev_id);
+
+
+CREATE TABLE System
+(
+  system_id     INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  pos_x         DOUBLE NOT NULL,
+  pos_y         DOUBLE NOT NULL,
+  pos_z         DOUBLE NOT NULL,
+  added_id      INTEGER,
+  modified      DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+
+  CONSTRAINT fk_System_added_id_Added FOREIGN KEY (added_id) REFERENCES Added(added_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+DROP INDEX IF EXISTS idx_system_by_pos;
+CREATE INDEX ix_System_pos_x_pos_y_pos_z ON System (pos_x, pos_y, pos_z);
+
+
+CREATE TABLE Station
+(
+  station_id    INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  name          VARCHAR(40) NOT NULL COLLATE nocase,
+  system_id     INTEGER NOT NULL,
+  ls_from_star  INTEGER NOT NULL
+                  CHECK (ls_from_star >= 0),
+  blackmarket   CHAR(1) NOT NULL
+                  CHECK (blackmarket IN ('?', 'Y', 'N')),
+  max_pad_size  CHAR(1) NOT NULL
+                  CHECK (max_pad_size IN ('?', 'S', 'M', 'L')),
+  market        CHAR(1) NOT NULL
+                  CHECK (market IN ('?', 'Y', 'N')),
+  shipyard      CHAR(1) NOT NULL
+                  CHECK (shipyard IN ('?', 'Y', 'N')),
+  modified      DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  outfitting    CHAR(1) NOT NULL
+                  CHECK (outfitting IN ('?', 'Y', 'N')),
+  rearm         CHAR(1) NOT NULL
+                  CHECK (rearm IN ('?', 'Y', 'N')),
+  refuel        CHAR(1) NOT NULL
+                  CHECK (refuel IN ('?', 'Y', 'N')),
+  repair        CHAR(1) NOT NULL
+                  CHECK (repair     IN ('?', 'Y', 'N')),
+  planetary     CHAR(1) NOT NULL
+                  CHECK (planetary  IN ('?', 'Y', 'N')),
+  type_id       INTEGER NOT NULL,
+
+  CONSTRAINT fk_Station_system_id_System FOREIGN KEY (system_id) REFERENCES System(system_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+DROP INDEX IF EXISTS idx_station_by_system;
+CREATE INDEX ix_Station_system_id ON Station (system_id);
+DROP INDEX IF EXISTS idx_station_by_name;
+CREATE INDEX ix_Station_name ON Station (name);
+
+
+-- Leaf tier tables: Not referenced, and reference 1+ top-tier table
+
+
+CREATE TABLE ShipVendor
+(
+  ship_id       INTEGER NOT NULL,
+  station_id    INTEGER NOT NULL,
+  modified      DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+
+  CONSTRAINT pk_ShipVendor PRIMARY KEY (ship_id, station_id),
+
+  CONSTRAINT fk_ShipVendor_ship_id_Ship       FOREIGN KEY (ship_id)    REFERENCES Ship(ship_id)       ON DELETE CASCADE,
+  CONSTRAINT fk_ShipVendor_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE INDEX ix_ShipVendor_station_id ON ShipVendor (station_id);
 
 
 CREATE TABLE UpgradeVendor
- (
-   upgrade_id INTEGER NOT NULL,
-   station_id INTEGER NOT NULL,
-   modified DATETIME NOT NULL,
+(
+  upgrade_id    INTEGER NOT NULL,
+  station_id    INTEGER NOT NULL,
+  modified      DATETIME NOT NULL,
 
-   PRIMARY KEY (upgrade_id, station_id),
+  CONSTRAINT pk_UpgradeVendor PRIMARY KEY (upgrade_id, station_id),
 
-   FOREIGN KEY (upgrade_id) REFERENCES Upgrade(upgrade_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE,
-   FOREIGN KEY (station_id) REFERENCES Station(station_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
- ) WITHOUT ROWID
-;
-CREATE INDEX idx_vendor_by_station_id ON UpgradeVendor (station_id);
+  CONSTRAINT fk_UpgradeVendor_upgrade_id_Upgrade FOREIGN KEY (upgrade_id) REFERENCES Upgrade(upgrade_id) ON DELETE CASCADE,
+  CONSTRAINT fk_UpgradeVendor_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+DROP INDEX IF EXISTS idx_vendor_by_station_id;
+CREATE INDEX ix_UpgradeVendor_station_id ON UpgradeVendor (station_id);
+
 
 CREATE TABLE RareItem
- (
-   rare_id INTEGER PRIMARY KEY,
-   station_id INTEGER NOT NULL,
-   category_id INTEGER NOT NULL,
-   name VARCHAR(40) COLLATE nocase,
-   cost INTEGER,
-   max_allocation INTEGER,
-   illegal TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (illegal IN ('?', 'Y', 'N')),
-   suppressed TEXT(1) NOT NULL DEFAULT '?'
-       CHECK (suppressed IN ('?', 'Y', 'N')),
+(
+  rare_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  station_id    INTEGER NOT NULL,
+  category_id   INTEGER NOT NULL,
+  name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  cost          INTEGER,
+  max_allocation  INTEGER,
+  illegal       CHAR(1) NOT NULL
+                  CHECK (illegal IN ('?', 'Y', 'N')),
+  suppressed    CHAR(1) NOT NULL
+                  CHECK (suppressed IN ('?', 'Y', 'N')),
 
-   UNIQUE (name),
-
-   FOREIGN KEY (station_id) REFERENCES Station(station_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE,
-   FOREIGN KEY (category_id) REFERENCES Category(category_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
- )
-;
-
-CREATE TABLE Category
- (
-   category_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-
-   UNIQUE (category_id)
- );
-
-
-CREATE TABLE Item
- (
-   item_id INTEGER PRIMARY KEY,
-   name VARCHAR(40) COLLATE nocase,
-   category_id INTEGER NOT NULL,
-   ui_order INTEGER NOT NULL DEFAULT 0,
-   avg_price INTEGER,
-   fdev_id INTEGER,
-
-   UNIQUE (item_id),
-
-   FOREIGN KEY (category_id) REFERENCES Category(category_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
- );
- CREATE INDEX idx_item_by_fdev_id ON Item (fdev_id);
+  CONSTRAINT fk_RareItem_station_id_Station   FOREIGN KEY (station_id)  REFERENCES Station(station_id)   ON DELETE CASCADE,
+  CONSTRAINT fk_RareItem_category_id_Category FOREIGN KEY (category_id) REFERENCES Category(category_id) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE INDEX ix_RareItem_station_id ON RareItem (station_id);
+CREATE INDEX ix_RareItem_category_id ON RareItem (category_id);
 
 
 CREATE TABLE StationItem
- (
-  station_id INTEGER NOT NULL,
-  item_id INTEGER NOT NULL,
-  demand_price INT NOT NULL,
-  demand_units INT NOT NULL,
-  demand_level INT NOT NULL,
-  supply_price INT NOT NULL,
-  supply_units INT NOT NULL,
-  supply_level INT NOT NULL,
-  modified DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-  from_live INTEGER DEFAULT 0 NOT NULL,
+(
+  station_id    INTEGER NOT NULL,
+  item_id       INTEGER NOT NULL,
+  demand_price  INT NOT NULL,
+  demand_units  INT NOT NULL,
+  demand_level  INT NOT NULL,
+  supply_price  INT NOT NULL,
+  supply_units  INT NOT NULL,
+  supply_level  INT NOT NULL,
+  modified      DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  from_live     INTEGER DEFAULT 0 NOT NULL,
 
-  PRIMARY KEY (station_id, item_id),
-  FOREIGN KEY (station_id) REFERENCES Station(station_id)
-    ON UPDATE CASCADE ON DELETE CASCADE,
-  FOREIGN KEY (item_id) REFERENCES Item(item_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT pk_StationItem PRIMARY KEY  (station_id, item_id),
+
+  CONSTRAINT fk_StationItem_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE,
+  CONSTRAINT fk_StationItem_item_id_Item       FOREIGN KEY (item_id)    REFERENCES Item(item_id)       ON DELETE CASCADE
 ) WITHOUT ROWID;
-CREATE INDEX si_mod_stn_itm ON StationItem(modified, station_id, item_id);
-CREATE INDEX si_itm_dmdpr ON StationItem(item_id, demand_price) WHERE demand_price > 0;
-CREATE INDEX si_itm_suppr ON StationItem(item_id, supply_price) WHERE supply_price > 0;
+DROP INDEX IF EXISTS si_mod_stn_itm;
+CREATE INDEX ix_StationItem_modified_station_id ON StationItem(modified, station_id);
+DROP INDEX IF EXISTS si_itm_dmpdr;
+CREATE INDEX ix_StationItem_item_id_demand_price ON StationItem(item_id, station_id, demand_price) WHERE demand_price > 0;
+DROP INDEX IF EXISTS si_itm_suppr;
+CREATE INDEX ix_StationItem_item_id_supply_price ON StationItem(item_id, station_id, supply_price) WHERE supply_price > 0;
+
 
 -- Not used yet
+-- These should replace the StationItems table.
 CREATE TABLE IF NOT EXISTS StationDemand
 (
     station_id      INTEGER NOT NULL,
@@ -247,7 +232,6 @@ CREATE TABLE IF NOT EXISTS StationDemand
 DELETE FROM StationDemand;
 CREATE INDEX idx_StationDemand_item ON StationDemand (item_id);
 
--- Not used yet
 CREATE TABLE IF NOT EXISTS StationSupply
 (
     station_id      INTEGER NOT NULL,
@@ -305,34 +289,33 @@ SELECT  station_id,
 -- -Bernd
 
 CREATE TABLE FDevShipyard
- (
-   id INTEGER NOT NULL,
-   symbol VARCHAR(40),
-   name VARCHAR(40) COLLATE nocase,
-   entitlement VARCHAR(50),
-
-   UNIQUE (id)
- );
+(
+  id          INTEGER PRIMARY KEY NOT NULL UNIQUE,
+  symbol      VARCHAR(40),
+  name        VARCHAR(40) NOT NULL COLLATE nocase,
+  entitlement VARCHAR(50)
+) WITHOUT ROWID;
 
 
 CREATE TABLE FDevOutfitting
- (
-   id INTEGER NOT NULL,
-   symbol VARCHAR(40),
-   category CHAR(10)
-      CHECK (category IN ('hardpoint','internal','standard','utility')),
-   name VARCHAR(40) COLLATE nocase,
-   mount CHAR(10)
-      CHECK (mount IN (NULL, 'Fixed','Gimballed','Turreted')),
-   guidance CHAR(10)
-      CHECK (guidance IN (NULL, 'Dumbfire','Seeker','Swarm')),
-   ship VARCHAR(40) COLLATE nocase,
-   class CHAR(1) NOT NULL,
-   rating CHAR(1) NOT NULL,
-   entitlement VARCHAR(50),
+(
+   id         INTEGER PRIMARY KEY NOT NULL UNIQUE,
+   symbol     VARCHAR(40),
+   category   CHAR(10)
+              CHECK (category IN ('hardpoint','internal','standard','utility')),
+   name       VARCHAR(40) NOT NULL COLLATE nocase,
+   mount      VARCHAR(10)
+              CHECK (mount IN (NULL, 'Fixed','Gimballed','Turreted')),
+   guidance   VARCHAR(10)
+              CHECK (guidance IN (NULL, 'Dumbfire','Seeker','Swarm')),
+   ship       VARCHAR(40) COLLATE nocase,
+   class      VARCHAR(1) NOT NULL,
+   rating     VARCHAR(1) NOT NULL,
+   entitlement VARCHAR(50)
+) WITHOUT ROWID;
 
-   UNIQUE (id)
- );
+
+PRAGMA user_version = 2;  -- Match to tradedb.py SCHEMA_VERSION
 
 
 COMMIT;

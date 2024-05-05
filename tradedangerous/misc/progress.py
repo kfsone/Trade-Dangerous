@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+import typing
+
 from rich.progress import (
         Progress as RichProgress,
         TaskID,
@@ -6,9 +11,11 @@ from rich.progress import (
         TaskProgressColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn,
         TransferSpeedColumn
 )
-from contextlib import contextmanager
 
-from typing import Iterable, Optional, Union, Type  # noqa
+
+if typing.TYPE_CHECKING:
+    from typing import Optional, Union, Type
+    from collections.abc import Iterable
 
 
 class BarStyle:
@@ -59,7 +66,7 @@ class Progress:
                  start: float = 0,
                  prefix: Optional[str] = None,
                  *,
-                 style: Optional[Type[BarStyle]] = None,
+                 style: Optional[Type[BarStyle]] = None,    # pylint: disable=deprecated-typing-alias
                  show: bool = True,
                  ) -> None:
         """
