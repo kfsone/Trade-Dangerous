@@ -33,43 +33,70 @@ PRAGMA auto_vacuum=INCREMENTAL;
 BEGIN TRANSACTION;
 
 
--- Top-level tables (no references to other tables)
+--
+-- This is NOT the schema version, see the end of the transaction for the
+-- actual schema version setting.
+--
+-- We set version 0 here so that once we start changing the schema,
+-- we don't correspond to ANY schema version if we fail before reaching
+-- the setting of the actual version.
+-- 
+PRAGMA user_version = 0;  -- If we don't complete this, void the warranty.
 
-CREATE TABLE Added
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+-- Root Tables: These do not have foreign keys to anthing else
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+
+CREATE TABLE IF NOT EXISTS Added
 (
   added_id      INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
   name          VARCHAR(40) COLLATE nocase NOT NULL UNIQUE
 );
+DELETE FROM Added;
 
 
-CREATE TABLE Category
+CREATE TABLE IF NOT EXISTS Category
 (
   category_id   INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase
 );
+DELETE FROM Category;
 
 
-CREATE TABLE Ship
+CREATE TABLE IF NOT EXISTS Ship
 (
   ship_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
   cost          INTEGER NOT NULL
 ) WITHOUT ROWID;
+DELETE FROM Ship;
 
 
-CREATE TABLE Upgrade
+CREATE TABLE IF NOT EXISTS Upgrade
 (
   upgrade_id    INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
+  -- weight        NUMBER NOT NULL,
+  -- cost          NUMBER NOT NULL
   class         NUMBER NOT NULL,
   rating        CHAR(1) NOT NULL,
   ship          VARCHAR(40) NOT NULL COLLATE nocase
 ) WITHOUT ROWID;
+DELETE FROM Upgrade;
 
 
--- Second tier tables (references 1+ top-tier, and has references from other tables)
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+-- Primary Tables: These have at most a single foreign key to a root table.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-CREATE TABLE Item
+
+CREATE TABLE IF NOT EXISTS Item
 (
   item_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
@@ -80,11 +107,11 @@ CREATE TABLE Item
 
   CONSTRAINT fk_Item_category_id_Category FOREIGN KEY (category_id) REFERENCES Category(category_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-DROP INDEX IF EXISTS idx_item_by_fdev_id;
-CREATE INDEX ix_Item_fdev_id ON Item (fdev_id);
+DELETE FROM Item;
+CREATE INDEX IF NOT EXISTS ix_Item_fdev_id ON Item (fdev_id);
 
 
-CREATE TABLE System
+CREATE TABLE IF NOT EXISTS System
 (
   system_id     INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
@@ -96,11 +123,11 @@ CREATE TABLE System
 
   CONSTRAINT fk_System_added_id_Added FOREIGN KEY (added_id) REFERENCES Added(added_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-DROP INDEX IF EXISTS idx_system_by_pos;
-CREATE INDEX ix_System_pos_x_pos_y_pos_z ON System (pos_x, pos_y, pos_z);
+DELETE FROM System;
+CREATE INDEX IF NOT EXISTS ix_System_pos_x_pos_y_pos_z ON System (pos_x, pos_y, pos_z);
 
 
-CREATE TABLE Station
+CREATE TABLE IF NOT EXISTS Station
 (
   station_id    INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL COLLATE nocase,
@@ -130,16 +157,19 @@ CREATE TABLE Station
 
   CONSTRAINT fk_Station_system_id_System FOREIGN KEY (system_id) REFERENCES System(system_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-DROP INDEX IF EXISTS idx_station_by_system;
-CREATE INDEX ix_Station_system_id ON Station (system_id);
-DROP INDEX IF EXISTS idx_station_by_name;
-CREATE INDEX ix_Station_name ON Station (name);
+DELETE FROM Station;
+CREATE INDEX IF NOT EXISTS ix_Station_system_id ON Station (system_id);
+CREATE INDEX IF NOT EXISTS ix_Station_name ON Station (name);
 
 
--- Leaf tier tables: Not referenced, and reference 1+ top-tier table
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+-- Complex tables: These have a non-root foreign key, or more than one foreign key.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
 
-CREATE TABLE ShipVendor
+CREATE TABLE IF NOT EXISTS ShipVendor
 (
   ship_id       INTEGER NOT NULL,
   station_id    INTEGER NOT NULL,
@@ -150,10 +180,11 @@ CREATE TABLE ShipVendor
   CONSTRAINT fk_ShipVendor_ship_id_Ship       FOREIGN KEY (ship_id)    REFERENCES Ship(ship_id)       ON DELETE CASCADE,
   CONSTRAINT fk_ShipVendor_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-CREATE INDEX ix_ShipVendor_station_id ON ShipVendor (station_id);
+DELETE FROM ShipVendor;
+CREATE INDEX IF NOT EXISTS ix_ShipVendor_station_id ON ShipVendor (station_id);
 
 
-CREATE TABLE UpgradeVendor
+CREATE TABLE IF NOT EXISTS UpgradeVendor
 (
   upgrade_id    INTEGER NOT NULL,
   station_id    INTEGER NOT NULL,
@@ -164,11 +195,11 @@ CREATE TABLE UpgradeVendor
   CONSTRAINT fk_UpgradeVendor_upgrade_id_Upgrade FOREIGN KEY (upgrade_id) REFERENCES Upgrade(upgrade_id) ON DELETE CASCADE,
   CONSTRAINT fk_UpgradeVendor_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-DROP INDEX IF EXISTS idx_vendor_by_station_id;
-CREATE INDEX ix_UpgradeVendor_station_id ON UpgradeVendor (station_id);
+DELETE FROM UpgradeVendor;
+CREATE INDEX IF NOT EXISTS ix_UpgradeVendor_station_id ON UpgradeVendor (station_id);
 
 
-CREATE TABLE RareItem
+CREATE TABLE IF NOT EXISTS RareItem
 (
   rare_id       INTEGER PRIMARY KEY NOT NULL UNIQUE,
   station_id    INTEGER NOT NULL,
@@ -184,11 +215,12 @@ CREATE TABLE RareItem
   CONSTRAINT fk_RareItem_station_id_Station   FOREIGN KEY (station_id)  REFERENCES Station(station_id)   ON DELETE CASCADE,
   CONSTRAINT fk_RareItem_category_id_Category FOREIGN KEY (category_id) REFERENCES Category(category_id) ON DELETE CASCADE
 ) WITHOUT ROWID;
-CREATE INDEX ix_RareItem_station_id ON RareItem (station_id);
-CREATE INDEX ix_RareItem_category_id ON RareItem (category_id);
+DELETE FROM RareItem;
+CREATE INDEX IF NOT EXISTS ix_RareItem_station_id ON RareItem (station_id);
+CREATE INDEX IF NOT EXISTS ix_RareItem_category_id ON RareItem (category_id);
 
 
-CREATE TABLE StationItem
+CREATE TABLE IF NOT EXISTS StationItem
 (
   station_id    INTEGER NOT NULL,
   item_id       INTEGER NOT NULL,
@@ -206,12 +238,10 @@ CREATE TABLE StationItem
   CONSTRAINT fk_StationItem_station_id_Station FOREIGN KEY (station_id) REFERENCES Station(station_id) ON DELETE CASCADE,
   CONSTRAINT fk_StationItem_item_id_Item       FOREIGN KEY (item_id)    REFERENCES Item(item_id)       ON DELETE CASCADE
 ) WITHOUT ROWID;
-DROP INDEX IF EXISTS si_mod_stn_itm;
-CREATE INDEX ix_StationItem_modified_station_id ON StationItem(modified, station_id);
-DROP INDEX IF EXISTS si_itm_dmpdr;
-CREATE INDEX ix_StationItem_item_id_demand_price ON StationItem(item_id, station_id, demand_price) WHERE demand_price > 0;
-DROP INDEX IF EXISTS si_itm_suppr;
-CREATE INDEX ix_StationItem_item_id_supply_price ON StationItem(item_id, station_id, supply_price) WHERE supply_price > 0;
+DELETE FROM StationItem;
+CREATE INDEX IF NOT EXISTS ix_StationItem_modified_station_id ON StationItem(modified, station_id);
+CREATE INDEX IF NOT EXISTS ix_StationItem_item_id_demand_price ON StationItem(item_id, station_id, demand_price) WHERE demand_price > 0;
+CREATE INDEX IF NOT EXISTS ix_StationItem_item_id_supply_price ON StationItem(item_id, station_id, supply_price) WHERE supply_price > 0;
 
 
 -- Not used yet
@@ -232,6 +262,7 @@ CREATE TABLE IF NOT EXISTS StationDemand
 DELETE FROM StationDemand;
 CREATE INDEX idx_StationDemand_item ON StationDemand (item_id);
 
+
 CREATE TABLE IF NOT EXISTS StationSupply
 (
     station_id      INTEGER NOT NULL,
@@ -248,6 +279,14 @@ CREATE TABLE IF NOT EXISTS StationSupply
 DELETE FROM StationSupply;
 CREATE INDEX idx_StationSupply_item ON StationSupply (item_id);
 
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+-- Views: These are virtual tables that operate a well-defined query.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DROP VIEW IF EXISTS StationBuying;
 CREATE VIEW StationBuying AS
 SELECT  station_id,
         item_id,
@@ -259,6 +298,7 @@ SELECT  station_id,
  WHERE  demand_price > 0
 ;
 
+DROP VIEW IF EXISTS StationSelling;
 CREATE VIEW StationSelling AS
 SELECT  station_id,
         item_id,
@@ -271,6 +311,7 @@ SELECT  station_id,
 ;
 
 
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 --
 -- The next two tables (FDevShipyard, FDevOutfitting) are
 -- used to map the FDev API IDs to data ready for EDDN.
@@ -287,17 +328,20 @@ SELECT  station_id,
 -- are using the same names.
 --
 -- -Bernd
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-CREATE TABLE FDevShipyard
+
+CREATE TABLE IF NOT EXISTS FDevShipyard
 (
   id          INTEGER PRIMARY KEY NOT NULL UNIQUE,
   symbol      VARCHAR(40),
   name        VARCHAR(40) NOT NULL COLLATE nocase,
   entitlement VARCHAR(50)
 ) WITHOUT ROWID;
+DELETE FROM FDevShipyard;
 
 
-CREATE TABLE FDevOutfitting
+CREATE TABLE IF NOT EXISTS FDevOutfitting
 (
    id         INTEGER PRIMARY KEY NOT NULL UNIQUE,
    symbol     VARCHAR(40),
@@ -313,9 +357,11 @@ CREATE TABLE FDevOutfitting
    rating     VARCHAR(1) NOT NULL,
    entitlement VARCHAR(50)
 ) WITHOUT ROWID;
+DELETE FROM FDevOutfitting;
 
 
 PRAGMA user_version = 2;  -- Match to tradedb.py SCHEMA_VERSION
 
 
 COMMIT;
+

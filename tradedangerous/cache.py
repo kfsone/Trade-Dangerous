@@ -965,11 +965,18 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
     with sqlite3.connect(str(db_path)) as db:
         # Determine what schema version the database thinks it is at.
         schema_no = db.execute("PRAGMA user_version").fetchone()[0]
-    
+
+    # If the schema versions don't match, delete the file, it will be
+    # easier than trying to fix it up. We could in theory go in and
+    # drop all the tables but that's too much tech debt.
     if int(schema_no) != tdb.SCHEMA_VERSION:
         tdenv.NOTE(":woman_mechanic: Incompatible cache version detected, adapting.")
         tdenv.remove_file(db_path)
-    
+
+    # Note: If we *didn't* delete the file, the SQL as of Schema Version 1
+    # is expected to truncate tables to perform a clean, so running it here
+    # should clean out any data.
+
     # Read the SQL script so we are ready to populate structure, etc.
     # Check if the database matches the current schema.
     tdenv.DEBUG0("Executing SQL Script '{}' from '{}'", sql_path, os.getcwd())

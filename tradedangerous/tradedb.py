@@ -78,7 +78,7 @@ locale.setlocale(locale.LC_ALL, '')
 # bump when the schema has changes that require deletion of old
 # data. Match to the `PRAGMA user_version` at the end of the .sql
 #
-SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 2
 # HISTORY:
 # 2: 6/12/2024: Initial Schema'd version
 # 1: Original pre-schema version
@@ -503,6 +503,9 @@ class TradeDB:
     Encapsulation for the database layer.
     
     Attributes:
+        SCHEMA_VERSION
+            The schema version this database is expected to have
+
         dataPath
             Path() to the data directory
         dbPath
@@ -535,6 +538,7 @@ class TradeDB:
             Case and punctuation normalizes a string to make it easier
             to find approximate matches.
     """
+    SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
     
     # Translation map for normalizing strings
     normalizeTrans = str.maketrans(
