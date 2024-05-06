@@ -512,7 +512,7 @@ def processPrices(tdenv: TradeEnv, priceFile: Path, db: sqlite3.Connection, defa
     getItemID = itemByName.get
     newItems, updtItems, ignItems = 0, 0, 0
     
-    def processItemLine(matches):
+    def processItemLine(matches) -> None:
         nonlocal newItems, updtItems, ignItems
         itemName, modified = matches.group('item', 'time')
         itemName = itemName.upper()
@@ -736,7 +736,7 @@ def processPricesFile(tdenv: TradeEnv, db: sqlite3.Connection, pricesPath: Path,
 ######################################################################
 
 
-def depCheck(importPath, lineNo, depType, key, correctKey):
+def depCheck(importPath: Path, lineNo: int, depType: str, key: str, correctKey: str) -> None:
     if correctKey == key:
         return
     if correctKey == corrections.DELETED:
@@ -744,14 +744,14 @@ def depCheck(importPath, lineNo, depType, key, correctKey):
     raise DeprecatedKeyError(importPath, lineNo, depType, key, correctKey)
 
 
-def deprecationCheckSystem(importPath, lineNo, line):
+def deprecationCheckSystem(importPath: Path, lineNo: int, line: str) -> None:
     depCheck(
         importPath, lineNo, 'System',
         line[0], corrections.correctSystem(line[0]),
     )
 
 
-def deprecationCheckStation(importPath, lineNo, line):
+def deprecationCheckStation(importPath: Path, lineNo: int, line: str) -> None:
     depCheck(
         importPath, lineNo, 'System',
         line[0], corrections.correctSystem(line[0]),
@@ -762,14 +762,14 @@ def deprecationCheckStation(importPath, lineNo, line):
     )
 
 
-def deprecationCheckCategory(importPath, lineNo, line):
+def deprecationCheckCategory(importPath: Path, lineNo: int, line: str) -> None:
     depCheck(
         importPath, lineNo, 'Category',
         line[0], corrections.correctCategory(line[0]),
     )
 
 
-def deprecationCheckItem(importPath, lineNo, line):
+def deprecationCheckItem(importPath: Path, lineNo: int, line: str) -> None:
     depCheck(
         importPath, lineNo, 'Category',
         line[0], corrections.correctCategory(line[0]),
@@ -783,7 +783,7 @@ def deprecationCheckItem(importPath, lineNo, line):
 def processImportFile(tdenv: TradeEnv, db: sqlite3.Connection, importPath: Path, tableName: str,
                       *,
                       line_callback: Optional[Callable] = None, call_args: Optional[dict] = None,
-                      )-> None:
+                      ) -> None:
     tdenv.DEBUG0(
         "Processing import file '{}' for table '{}'",
         str(importPath), tableName
@@ -893,7 +893,7 @@ def processImportFile(tdenv: TradeEnv, db: sqlite3.Connection, importPath: Path,
                         continue
                 if uniqueIndexes:
                     # Need to construct the actual unique index key as
-                    # something less likely to collide with manmade
+                    # something less likely to collide with man-made
                     # values when it's a compound.
                     keyValues = [
                         str(linein[col]).upper()
@@ -930,13 +930,13 @@ def processImportFile(tdenv: TradeEnv, db: sqlite3.Connection, importPath: Path,
                 )
         db.commit()
         tdenv.DEBUG0("{count} {table}s imported",
-                            count = importCount,
-                            table = tableName)
+                            count=importCount,
+                            table=tableName)
 
 ######################################################################
 
 
-def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
+def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True) -> None:
     """
     Rebuilds the SQlite database from source files.
     
@@ -993,12 +993,15 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
     
     db = tdb.getDB()
     schema_no = db.execute("PRAGMA user_version").fetchone()[0]
-    # P]ragma U]ser_V]ersion to S]chema V]ersion mismatch.
+    # Pragma User_Version to Schema Version mismatch. If this gets raised, it means
+    # that the script did not take somehow or the number in the .py doesn't match
+    # the number in the .sql file.
     assert schema_no == tdb.SCHEMA_VERSION, f"Cache versioning update failure PUVSV_MISMATCH {schema_no} v {tdb.SCHEMA_VERSION}"
     tdb.close()
     
     # import standard tables
-    with sqlite3.connect(str(db_path)) as db, Progress(max_value=len(tdb.importTables) + 1, prefix="Importing", width=25, style=CountingBar) as prog:
+    db = tdb.getDB()
+    with Progress(max_value=len(tdb.importTables) + 1, prefix="Importing", width=25, style=CountingBar) as prog:
         for (import_name, import_table) in tdb.importTables:
             import_path = Path(import_name)
             import_lines = file_line_count(import_path, missing_ok=True)
@@ -1043,12 +1046,12 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
 def regeneratePricesFile(tdb: TradeDB, tdenv: TradeEnv) -> None:
     tdenv.DEBUG0("Regenerating .prices file")
     
-    with tdb.pricesPath.open("w", encoding = 'utf-8') as pricesFile:
+    with tdb.pricesPath.open("w", encoding='utf-8') as pricesFile:
         prices.dumpPrices(
                 tdb.dbFilename,
                 prices.Element.full,
-                file = pricesFile,
-                debug = tdenv.debug)
+                file=pricesFile,
+                debug=tdenv.debug)
     
     # Update the DB file so we don't regenerate it.
     os.utime(tdb.dbFilename)
@@ -1056,7 +1059,7 @@ def regeneratePricesFile(tdb: TradeDB, tdenv: TradeEnv) -> None:
 ######################################################################
 
 
-def importDataFromFile(tdb: TradeDB, tdenv: TradeEnv, path: Path, pricesFh = None, reset: bool = False):
+def importDataFromFile(tdb: TradeDB, tdenv: TradeEnv, path: Path, pricesFh: Optional[TextIO] = None, reset: bool = False) -> None:
     """
         Import price data from a file on a per-station basis,
         that is when a new station is encountered, delete any
@@ -1076,9 +1079,9 @@ def importDataFromFile(tdb: TradeDB, tdenv: TradeEnv, path: Path, pricesFh = Non
     
     tdenv.DEBUG0("Importing data from {}".format(str(path)))
     processPricesFile(tdenv,
-            db = tdb.getDB(),
-            pricesPath = path,
-            pricesFh = pricesFh,
+            db=tdb.getDB(),
+            pricesPath=path,
+            pricesFh=pricesFh,
     )
     
     # If everything worked, we may need to re-build the prices file.
