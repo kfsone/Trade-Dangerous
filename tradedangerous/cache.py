@@ -37,7 +37,6 @@ from tradedangerous.misc.progress import Progress, CountingBar
 from . import corrections, utils
 from . import prices
 
-
 # For mypy/pylint type checking
 if typing.TYPE_CHECKING:
     from typing import Any, Optional, TextIO
@@ -962,9 +961,14 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
     prices_path = tdb.pricesPath
     
     # Check if the current database is compatible with our schema.    
-    with sqlite3.connect(str(db_path)) as db:
-        # Determine what schema version the database thinks it is at.
-        schema_no = db.execute("PRAGMA user_version").fetchone()[0]
+    db = tdb.getDB()
+    # Determine what schema version the database thinks it is at.
+    schema_no = db.execute("PRAGMA user_version").fetchone()[0]
+    
+    # BEWARE: Unless you explicitly close the database, sometimes it
+    # doesn't close when you would expect it to such as with context
+    # managers.
+    tdb.close()
 
     # If the schema versions don't match, delete the file, it will be
     # easier than trying to fix it up. We could in theory go in and
@@ -980,12 +984,18 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
     # Read the SQL script so we are ready to populate structure, etc.
     # Check if the database matches the current schema.
     tdenv.DEBUG0("Executing SQL Script '{}' from '{}'", sql_path, os.getcwd())
-    with sqlite3.connect(str(db_path)) as db, sql_path.open('r', encoding = 'utf-8') as sql_file:
+    db = tdb.getDB()
+    with sql_path.open('r', encoding='utf-8') as sql_file:
         sql_script = sql_file.read()
         db.executescript(sql_script)
-        schema_no = db.execute("PRAGMA user_version").fetchone()[0]
-        # P]ragma U]ser_V]ersion to S]chema V]ersion mismatch.
-        assert schema_no == tdb.SCHEMA_VERSION, "Cache versioning update failure PUVSV_MISMATCH"
+        db.commit()
+    tdb.close()
+    
+    db = tdb.getDB()
+    schema_no = db.execute("PRAGMA user_version").fetchone()[0]
+    # P]ragma U]ser_V]ersion to S]chema V]ersion mismatch.
+    assert schema_no == tdb.SCHEMA_VERSION, f"Cache versioning update failure PUVSV_MISMATCH {schema_no} v {tdb.SCHEMA_VERSION}"
+    tdb.close()
     
     # import standard tables
     with sqlite3.connect(str(db_path)) as db, Progress(max_value=len(tdb.importTables) + 1, prefix="Importing", width=25, style=CountingBar) as prog:
@@ -1011,6 +1021,8 @@ def buildCache(tdb: TradeDB, tdenv: TradeEnv, *, include_prices: bool = True):
         
         with prog.sub_task(description="Save DB"):
             db.commit()
+    
+    tdb.close()
     
     # Parse the prices file
     if include_prices:

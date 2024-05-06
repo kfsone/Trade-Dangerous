@@ -676,7 +676,6 @@ class TradeDB:
         """
         Checks if the .sql, .prices or *.csv files are newer than the cache.
         """
-        
         if self.dbPath.exists():
             dbFileStamp = self.dbPath.stat().st_mtime
             
@@ -699,17 +698,20 @@ class TradeDB:
                 if pricesStamp <= dbFileStamp:
                     self.tdenv.DEBUG1("DB Cache is up to date.")
                     return
-                
+
                 self.tdenv.DEBUG0(".prices has changed: re-importing")
                 cache.importDataFromFile(
                     self, self.tdenv, self.pricesPath, reset=True
                 )
+                self.close()
                 return
             
             self.tdenv.DEBUG0("Rebuilding DB Cache [{}]", str(changedPaths))
         else:
             self.tdenv.DEBUG0("Building DB Cache")
         
+        self.close()
+
         cache.buildCache(self, self.tdenv)
     
     ############################################################
@@ -1974,7 +1976,8 @@ class TradeDB:
     def close(self):
         if self.conn:
             self.conn.close()
-        self.conn = None
+        conn, self.conn = self.conn, None
+        del conn
     
     def load(self, maxSystemLinkLy=None):
         """
@@ -1987,8 +1990,6 @@ class TradeDB:
         """
         
         self.tdenv.DEBUG1("Loading data")
-
-
         
         self._loadAdded()
         self._loadSystems()
