@@ -80,11 +80,11 @@ CREATE TABLE IF NOT EXISTS Upgrade
 (
   upgrade_id    INTEGER PRIMARY KEY NOT NULL UNIQUE,
   name          VARCHAR(40) NOT NULL UNIQUE COLLATE nocase,
-  -- weight        NUMBER NOT NULL,
-  -- cost          NUMBER NOT NULL
-  class         NUMBER NOT NULL,
-  rating        CHAR(1) NOT NULL,
-  ship          VARCHAR(40) NOT NULL COLLATE nocase
+  weight        NUMBER NOT NULL,
+  cost          NUMBER NOT NULL  -- ,
+  -- class      NUMBER NOT NULL,
+  -- rating     CHAR(1) NOT NULL,
+  -- ship       VARCHAR(40) NOT NULL COLLATE nocase
 ) WITHOUT ROWID;
 DELETE FROM Upgrade;
 
@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS StationDemand
     CONSTRAINT fk_StationDemand_item_id_Item       FOREIGN KEY (item_id)    REFERENCES Item    (item_id)    ON DELETE CASCADE
 ) WITHOUT ROWID;
 DELETE FROM StationDemand;
-CREATE INDEX idx_StationDemand_item ON StationDemand (item_id);
+CREATE INDEX IF NOT EXISTS idx_StationDemand_item ON StationDemand (item_id);
 
 
 CREATE TABLE IF NOT EXISTS StationSupply
@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS StationSupply
     CONSTRAINT fk_StationSupply_item_id_Item       FOREIGN KEY (item_id)    REFERENCES Item    (item_id)    ON DELETE CASCADE
 ) WITHOUT ROWID;
 DELETE FROM StationSupply;
-CREATE INDEX idx_StationSupply_item ON StationSupply (item_id);
+CREATE INDEX IF NOT EXISTS idx_StationSupply_item ON StationSupply (item_id);
 
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
